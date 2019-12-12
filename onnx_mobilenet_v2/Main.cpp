@@ -62,7 +62,7 @@ int main()
 
 		/* Inference */
 		// 4-dimensional Mat with NCHW
-		cv::Mat input = cv::dnn::blobFromImage(imageFloat, 1.0, cv::Size(224, 224));
+		cv::Mat input = cv::dnn::blobFromImage(imageFloat);
 		net.setInput(input);
 		std::vector<cv::Mat> outs;
 		net.forward(outs, outNames);
