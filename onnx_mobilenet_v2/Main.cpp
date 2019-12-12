@@ -40,7 +40,7 @@ int main()
 	// net.setPreferableTarget(cv::dnn::DNN_TARGET_CPU);
 	// net.setPreferableTarget(cv::dnn::DNN_TARGET_OPENCL);
 	// net.setPreferableTarget(cv::dnn::DNN_TARGET_VULKAN);
-	std::vector<cv::String> s_outNames = net.getUnconnectedOutLayersNames();
+	std::vector<cv::String> outNames = net.getUnconnectedOutLayersNames();
 	cv::setNumThreads(4);
 
 	/* Read image */
@@ -65,7 +65,7 @@ int main()
 		cv::Mat input = cv::dnn::blobFromImage(imageFloat, 1.0, cv::Size(224, 224));
 		net.setInput(input);
 		std::vector<cv::Mat> outs;
-		net.forward(outs, s_outNames);
+		net.forward(outs, outNames);
 
 		/* Post-Process */
 		std::vector<float> scores(outs[0].rows * outs[0].cols);
