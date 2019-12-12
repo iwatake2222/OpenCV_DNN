@@ -51,7 +51,7 @@ int main()
 	auto t0 = std::chrono::system_clock::now();
 	for (int i = 0; i < LOOP_NUM_TO_MEASURE_INFERENCE_TIME; i++) {
 		/* Pre-Process */
-		cv::resize(image, image, cv::Size(224, 224));
+		cv::resize(image, image, cv::Size(MODEL_WIDTH, MODEL_HEIGHT));
 		cv::Mat imageFloat = cv::Mat(image.rows, image.cols, CV_32FC3);
 #pragma omp parallel for
 		for (int i = 0; i < image.cols * image.rows; i++) {
@@ -61,8 +61,7 @@ int main()
 		}
 
 		/* Inference */
-		// 4-dimensional Mat with NCHW
-		cv::Mat input = cv::dnn::blobFromImage(imageFloat);
+		cv::Mat input = cv::dnn::blobFromImage(imageFloat);	// 4-dimensional Mat with NCHW
 		net.setInput(input);
 		std::vector<cv::Mat> outs;
 		net.forward(outs, outNames);
