@@ -1,20 +1,30 @@
+/*** Include ***/
+/* for general */
+#include <stdint.h>
 #include <stdio.h>
+#include <fstream> 
 #include <vector>
-#include <algorithm>
+#include <string>
 #include <chrono>
-#include <fstream>
+
+/* for OpenCV */
 #include <opencv2/opencv.hpp>
 #include <opencv2/dnn.hpp>
 
-#define MODEL_NAME RESOURCE_DIR"/mobilenetv2-1.0.onnx"	// NCHW
-#define LABEL_NAME RESOURCE_DIR"/synset.txt"
+/*** Macro ***/
+/* Model parameters */
+#define MODEL_NAME RESOURCE"/mobilenetv2-1.0.onnx"	// NCHW
+#define LABEL_NAME RESOURCE"/synset.txt"
 #define MODEL_WIDTH 224
 #define MODEL_HEIGHT 224
-#define MODEL_CHANNEL ncnn::Mat::PIXEL_BGR
 static const float PIXEL_MEAN[3] = { 0.485f, 0.456f, 0.406f };
-static const float PIXEL_STD[3] = { 0.229f, 0.224f, 0.225f };
-#define LOOP_NUM_TO_MEASURE_INFERENCE_TIME 100
+static const float PIXEL_STD[3] = { 0.229f,  0.224f, 0.225f };
 
+/* Settings */
+#define LOOP_NUM_FOR_TIME_MEASUREMENT 100
+
+
+/*** Function ***/
 static void readLabel(const char* filename, std::vector<std::string> &labels)
 {
 	std::ifstream ifs(filename);
@@ -30,6 +40,7 @@ static void readLabel(const char* filename, std::vector<std::string> &labels)
 
 int main()
 {
+	/*** Initialize ***/
 	/* read label */
 	std::vector<std::string> labels;
 	readLabel(LABEL_NAME, labels);
@@ -43,41 +54,51 @@ int main()
 	std::vector<cv::String> outNames = net.getUnconnectedOutLayersNames();
 	cv::setNumThreads(4);
 
+	/*** Process for each frame ***/
 	/* Read image */
-	cv::Mat image = cv::imread(RESOURCE_DIR"/parrot.jpg");
-	cv::imshow("Display", image);
+	cv::Mat originalImage = cv::imread(RESOURCE"/parrot.jpg");
+	cv::Mat inputImage;
 
-	/* Repeat process for timea measurement */
-	auto t0 = std::chrono::system_clock::now();
-	for (int i = 0; i < LOOP_NUM_TO_MEASURE_INFERENCE_TIME; i++) {
-		/* Pre-Process */
-		cv::resize(image, image, cv::Size(MODEL_WIDTH, MODEL_HEIGHT));
-		cv::Mat imageFloat = cv::Mat(image.rows, image.cols, CV_32FC3);
-#pragma omp parallel for
-		for (int i = 0; i < image.cols * image.rows; i++) {
-			for (int c = 0; c < image.channels(); c++) {
-				((float*)(imageFloat.data))[image.channels() * i + c] = (float)(((image.data[image.channels() * i + c] / 255.0) - PIXEL_MEAN[c]) / PIXEL_STD[c]);
-			}
-		}
+	/** Pre-process and Set data to input tensor **/
+	cv::resize(originalImage, inputImage, cv::Size(MODEL_WIDTH, MODEL_HEIGHT));
+	cv::cvtColor(inputImage, inputImage, cv::COLOR_BGR2RGB);
+	/* most of data values becomes -1.0 ~ 1.0 */
+	inputImage.convertTo(inputImage, CV_32FC3, 1.0 / 255);
+	cv::subtract(inputImage, cv::Scalar(cv::Vec<float, 3>(PIXEL_MEAN)), inputImage);
+	cv::divide(inputImage, cv::Scalar(cv::Vec<float, 3>(PIXEL_STD)), inputImage);
+//#pragma omp parallel for
+//	for (int i = 0; i < inputImage.cols * inputImage.rows; i++) {
+//		for (int c = 0; c < originalImage.channels(); c++) {
+//			((float*)(inputImage.data))[inputImage.channels() * i + c] = (float)(((inputImage.data[inputImage.channels() * i + c] / 255.0) - PIXEL_MEAN[c]) / PIXEL_STD[c]);
+//		}
+//	}
 
-		/* Inference */
-		cv::Mat input = cv::dnn::blobFromImage(imageFloat);	// 4-dimensional Mat with NCHW
-		net.setInput(input);
-		std::vector<cv::Mat> outs;
+	/* 4-dimensional Mat in NCHW */
+	cv::Mat input = cv::dnn::blobFromImage(inputImage);
+	net.setInput(input);
+
+	/* Run inference */
+	std::vector<cv::Mat> outs;
+	net.forward(outs, outNames);
+
+	/* Retrieve the result */
+	std::vector<float> outputScoreList(outs[0].rows * outs[0].cols);
+	outputScoreList.assign((float*)outs[0].data, (float*)outs[0].data + outputScoreList.size());
+	int maxIndex = (int)(std::max_element(outputScoreList.begin(), outputScoreList.end()) - outputScoreList.begin());
+	auto maxScore = *std::max_element(outputScoreList.begin(), outputScoreList.end());
+	printf("%s (%.3f)\n", labels[maxIndex].c_str(), maxScore);
+	cv::imshow("test", originalImage); cv::waitKey(1);
+
+	/*** (Optional) Measure inference time ***/
+	const auto& t0 = std::chrono::steady_clock::now();
+	for (int i = 0; i < LOOP_NUM_FOR_TIME_MEASUREMENT; i++) {
 		net.forward(outs, outNames);
-
-		/* Post-Process */
-		std::vector<float> scores(outs[0].rows * outs[0].cols);
-		scores.assign((float*)outs[0].data, (float*)outs[0].data + scores.size());
-		int maxIndex = std::max_element(scores.begin(), scores.end()) - scores.begin();
-		float maxScore = *std::max_element(scores.begin(), scores.end());	// todo softmax
-		if (i == 0) printf("Result = %s (%.3f)\n", labels[maxIndex].c_str(), maxScore);
 	}
-	auto t1 = std::chrono::system_clock::now();
+	const auto& t1 = std::chrono::steady_clock::now();
+	std::chrono::duration<double> timeSpan = t1 - t0;
+	printf("Inference time = %f [msec]\n", timeSpan.count() * 1000.0 / LOOP_NUM_FOR_TIME_MEASUREMENT);
 
-	double inferenceTime = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
-	printf("Inference time: %.2lf [msec]\n", inferenceTime / LOOP_NUM_TO_MEASURE_INFERENCE_TIME);
+	cv::waitKey(-1);
 
-	cv::waitKey(0);
 	return 0;
 }
